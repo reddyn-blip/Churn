@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Churn Watch — Live</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+:root{
+  --ink:#14171f;--ink-soft:#5a6172;--paper:#fbfaf7;--panel:#fff;
+  --line:#e7e3da;--line-strong:#d4cfc2;
+  --high:#c2453a;--high-bg:#fbe9e7;
+  --med:#c98a1a;--med-bg:#fbf2dd;
+  --low:#3f8a5c;--low-bg:#e8f3ec;
+  --accent:#2d4a7c;--accent-soft:#eef2f8;
+  --wallet:#7b4397;
+  --mono:'SF Mono','JetBrains Mono','Roboto Mono',ui-monospace,monospace;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.45}
+.wrap{max-width:1380px;margin:0 auto;padding:28px 24px 80px}
+
+/* ── Upload screen ── */
+#upload-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px}
+.upload-logo{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:24px}
+.upload-title{font-size:32px;font-weight:700;letter-spacing:-.02em;margin-bottom:6px;text-align:center}
+.upload-title .accent{color:var(--high)}
+.upload-sub{color:var(--ink-soft);font-size:14px;margin-bottom:40px;text-align:center;max-width:500px}
+.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;width:100%;max-width:760px}
+.drop-card{border:2px dashed var(--line-strong);border-radius:10px;background:var(--panel);padding:36px 28px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;position:relative}
+.drop-card:hover,.drop-card.drag-over{border-color:var(--accent);background:var(--accent-soft)}
+.drop-card input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop-card .drop-icon{font-size:30px;margin-bottom:12px;display:block}
+.drop-card .drop-label{font-size:14px;font-weight:600;color:var(--ink);margin-bottom:4px}
+.drop-card .drop-hint{font-size:12px;color:var(--ink-soft)}
+.drop-card .drop-status{margin-top:10px;font-size:12px;font-family:var(--mono);color:var(--low);min-height:18px}
+.drop-card .drop-status.err{color:var(--high)}
+.btn-go{margin-top:28px;padding:13px 40px;background:var(--ink);color:#fff;border:none;border-radius:7px;font-family:var(--mono);font-size:13px;letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:opacity .15s;opacity:.4;pointer-events:none}
+.btn-go.ready{opacity:1;pointer-events:auto}
+.btn-go.ready:hover{background:var(--accent)}
+#processing-msg{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--ink-soft);display:none}
+.upload-note{margin-top:28px;font-size:12px;color:var(--ink-soft);font-family:var(--mono);text-align:center;max-width:600px;line-height:1.7}
+.upload-note code{background:var(--line);padding:1px 5px;border-radius:3px}
+
+/* ── Dashboard ── */
+#dashboard{display:none}
+header{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:24px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px}
+h1{font-size:30px;font-weight:680;letter-spacing:-.02em;line-height:1.05}
+h1 .accent{color:var(--high)}
+.sub{margin-top:8px;color:var(--ink-soft);font-size:14px;max-width:760px}
+.asof{font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin-top:10px}
+.btn-reload{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:9px 16px;border:1px solid var(--line-strong);border-radius:6px;background:var(--panel);color:var(--ink-soft);cursor:pointer;white-space:nowrap;transition:border-color .12s,color .12s;margin-top:4px}
+.btn-reload:hover{border-color:var(--ink);color:var(--ink)}
+.kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-bottom:8px}
+.kpi{background:var(--panel);padding:15px 16px}
+.kpi .label{font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft)}
+.kpi .val{font-size:24px;font-weight:680;letter-spacing:-.02em;margin-top:6px}
+.kpi .note{font-size:11px;color:var(--ink-soft);margin-top:2px}
+.kpi.high .val{color:var(--high)}.kpi.med .val{color:var(--med)}.kpi.wallet .val{color:var(--wallet)}
+.dim{color:var(--ink-soft);font-size:11px;margin-bottom:22px;font-style:italic}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line-strong);margin-bottom:20px}
+.tab{font-family:var(--mono);font-size:12px;letter-spacing:.05em;text-transform:uppercase;padding:10px 18px;background:none;border:none;color:var(--ink-soft);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab:hover{color:var(--ink)}.tab.active{color:var(--ink);border-bottom-color:var(--high);font-weight:600}
+.view{display:none}.view.active{display:block}
+.controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.search{flex:1;min-width:200px;position:relative}
+.search input{width:100%;padding:9px 12px 9px 32px;border:1px solid var(--line-strong);border-radius:6px;font-size:13px;font-family:var(--sans);background:var(--panel)}
+.search input:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+.search svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ink-soft)}
+select.amsel{padding:9px 12px;border:1px solid var(--line-strong);border-radius:6px;font-size:13px;font-family:var(--sans);background:var(--panel);color:var(--ink);cursor:pointer;max-width:220px}
+.seg{display:flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden}
+.seg button{font-family:var(--mono);font-size:11px;letter-spacing:.04em;text-transform:uppercase;padding:8px 13px;background:var(--panel);border:none;cursor:pointer;color:var(--ink-soft);border-right:1px solid var(--line)}
+.seg button:last-child{border-right:none}
+.seg button.on{background:var(--ink);color:#fff}
+.seg button.on.high{background:var(--high)}.seg button.on.med{background:var(--med)}.seg button.on.low{background:var(--low)}
+.count-line{font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin-bottom:10px}
+.tbl-wrap{border:1px solid var(--line);background:var(--panel);overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);text-align:left;padding:11px 13px;border-bottom:1px solid var(--line-strong);white-space:nowrap;cursor:pointer;user-select:none;background:var(--panel);position:sticky;top:0}
+thead th:hover{color:var(--ink)}thead th.num{text-align:right}thead th .arrow{opacity:.4;font-size:9px}
+tbody td{padding:10px 13px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr:hover{background:#faf8f3}
+tbody td.num{text-align:right;font-family:var(--mono);font-size:12.5px}
+.seller-name{font-weight:540;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.subtle{font-size:11px;color:var(--ink-soft)}
+.pill{font-family:var(--mono);font-size:9.5px;padding:1px 5px;border-radius:3px;margin-left:5px}
+.pill.new{background:var(--accent-soft);color:var(--accent)}
+.tier-badge{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:3px 9px;border-radius:100px;display:inline-block}
+.tier-badge.High{background:var(--high-bg);color:var(--high)}.tier-badge.Medium{background:var(--med-bg);color:var(--med)}.tier-badge.Low{background:var(--low-bg);color:var(--low)}
+.score-cell{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+.score-bar{width:40px;height:5px;background:var(--line);border-radius:3px;overflow:hidden}.score-bar i{display:block;height:100%}
+.reasons{font-size:11.5px;color:var(--ink-soft);max-width:260px;line-height:1.35}
+.empty{padding:50px;text-align:center;color:var(--ink-soft);font-size:14px}
+.ambar{display:flex;height:26px;border-radius:4px;overflow:hidden;min-width:120px}
+.ambar i{display:block;height:100%}
+.ambar i.h{background:var(--high)}.ambar i.m{background:var(--med)}.ambar i.l{background:var(--low)}
+.risk-pct{font-family:var(--mono);font-weight:600}
+footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);font-size:11.5px;color:var(--ink-soft);font-family:var(--mono)}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(3,1fr)}.upload-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- ══════════════ UPLOAD SCREEN ══════════════ -->
+<div id="upload-screen">
+  <div class="upload-logo">Live Retention Monitor · Seller + Account Manager</div>
+  <div class="upload-title">Churn Watch <span class="accent">Live</span></div>
+  <div class="upload-sub">Upload your revenue ZIP and AM mapping CSV. Everything runs locally — no data leaves your browser.</div>
+
+  <div class="upload-grid">
+    <!-- ZIP -->
+    <div class="drop-card" id="zone-zip">
+      <input type="file" id="file-zip" accept=".zip">
+      <span class="drop-icon">🗜️</span>
+      <div class="drop-label">Revenue ZIP</div>
+      <div class="drop-hint">Monthly CSV files inside</div>
+      <div class="drop-status" id="status-zip"></div>
+    </div>
+    <!-- AM CSV -->
+    <div class="drop-card" id="zone-am">
+      <input type="file" id="file-am" accept=".csv">
+      <span class="drop-icon">👥</span>
+      <div class="drop-label">AM Mapping CSV</div>
+      <div class="drop-hint">seller_email + am_name columns</div>
+      <div class="drop-status" id="status-am"></div>
+    </div>
+  </div>
+
+  <button class="btn-go" id="btn-go">Generate Dashboard</button>
+  <div id="processing-msg">⏳ Processing files…</div>
+
+  <div class="upload-note">
+    ZIP should contain monthly revenue CSVs (standard Revenue MIS format).<br>
+    AM CSV needs at minimum: <code>seller_email</code>, <code>am_name</code><br>
+    Optional AM CSV columns: <code>cohort</code>, <code>zone</code>, <code>is_postpaid</code>
+  </div>
+</div>
+
+<!-- ══════════════ DASHBOARD ══════════════ -->
+<div id="dashboard">
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Live Retention Monitor · Seller + Account Manager</div>
+      <h1>Churn Watch <span class="accent">Live</span></h1>
+      <div class="sub">Each seller scored against their own 2-month rolling baseline. Drop in activity, elevated RTO, or minimal shipments trigger a flag.</div>
+      <div class="asof" id="asof"></div>
+    </div>
+    <button class="btn-reload" id="btn-reload">↑ Load new files</button>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+  <div class="dim" id="dimnote"></div>
+
+  <div class="tabs">
+    <button class="tab active" data-view="seller">Seller Watchlist</button>
+    <button class="tab" data-view="am">AM Book Health</button>
+    <button class="tab" data-view="method">How it works</button>
+  </div>
+
+  <!-- SELLER VIEW -->
+  <div class="view active" id="view-seller">
+    <div class="controls">
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" id="search" placeholder="Search seller email or company…">
+      </div>
+      <select class="amsel" id="amsel"><option value="all">All Account Managers</option></select>
+      <div class="seg" id="tierfilter">
+        <button data-tier="all" class="on">All</button>
+        <button data-tier="High">High</button>
+        <button data-tier="Medium">Medium</button>
+        <button data-tier="Low">Low</button>
+      </div>
+    </div>
+    <div class="count-line" id="countline"></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr>
+        <th data-sort="email">Seller <span class="arrow">↕</span></th>
+        <th data-sort="am">AM <span class="arrow">↕</span></th>
+        <th data-sort="tier">Risk <span class="arrow">↕</span></th>
+        <th data-sort="score" class="num">Score <span class="arrow">↕</span></th>
+        <th data-sort="fwd_curr" class="num">Fwd (current) <span class="arrow">↕</span></th>
+        <th data-sort="fwd_baseline" class="num">Fwd (baseline) <span class="arrow">↕</span></th>
+        <th data-sort="vs_base" class="num">vs norm <span class="arrow">↕</span></th>
+        <th data-sort="rto_rate" class="num">RTO % <span class="arrow">↕</span></th>
+        <th data-sort="rev_curr" class="num">Revenue ₹ <span class="arrow">↕</span></th>
+        <th data-sort="reasons">Why flagged <span class="arrow">↕</span></th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table></div>
+  </div>
+
+  <!-- AM VIEW -->
+  <div class="view" id="view-am">
+    <div class="count-line">AM book health — sorted by High-risk count. Click a row to filter to that AM's sellers.</div>
+    <div class="tbl-wrap"><table>
+      <thead><tr>
+        <th data-sortam="am">Account Manager <span class="arrow">↕</span></th>
+        <th data-sortam="total" class="num">Book size <span class="arrow">↕</span></th>
+        <th data-sortam="high" class="num">High <span class="arrow">↕</span></th>
+        <th data-sortam="medium" class="num">Medium <span class="arrow">↕</span></th>
+        <th data-sortam="low" class="num">Low <span class="arrow">↕</span></th>
+        <th>Distribution</th>
+        <th data-sortam="at_risk_pct" class="num">% at risk <span class="arrow">↕</span></th>
+        <th data-sortam="rev_at_risk" class="num">Rev at risk ₹ <span class="arrow">↕</span></th>
+      </tr></thead>
+      <tbody id="ambody"></tbody>
+    </table></div>
+  </div>
+
+  <!-- METHOD -->
+  <div class="view" id="view-method">
+    <div style="background:var(--panel);border:1px solid var(--line);padding:22px;margin-bottom:18px">
+      <h3 style="font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:16px">The scoring model</h3>
+      <div style="background:var(--accent-soft);border-left:3px solid var(--accent);padding:14px 16px;margin-bottom:14px;font-family:var(--mono);font-size:12.5px;color:var(--accent);line-height:1.6">
+        FLAG if shipments drop &gt;30% below seller's OWN 2-month rolling norm<br>
+        OR RTO rate &gt;25% OR current shipments ≤ 1<br>
+        Only sellers with history in at least one prior month are scored.
+      </div>
+      <div style="font-size:13px;color:var(--ink-soft);line-height:1.7">
+        <p style="margin-bottom:10px"><strong style="color:var(--ink)">Baseline</strong> = rolling average of forward shipments across the 2 most recent non-current months in the ZIP.</p>
+        <p style="margin-bottom:10px"><strong style="color:var(--ink)">Current period</strong> = the file whose month/year is closest to today.</p>
+        <p style="margin-bottom:10px"><strong style="color:var(--ink)">RTO rate</strong> = rows where shipment_type = RTO ÷ total shipments for that seller in the current period.</p>
+        <p><strong style="color:var(--ink)">Score</strong> is additive: drop severity (0–50) + RTO severity (0–35) + minimal activity flag (20). Tier: High ≥ 60, Medium ≥ 25, Low &lt; 25.</p>
+      </div>
+    </div>
+    <div style="background:var(--panel);border:1px solid var(--line);padding:22px">
+      <h3 style="font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:16px">Column mapping from Revenue MIS CSV</h3>
+      <div style="font-size:13px;color:var(--ink-soft);line-height:1.8;font-family:var(--mono)">
+        Seller key: <code>seller_email</code><br>
+        Forward shipments: <code>shipment_type = FORWARD</code><br>
+        RTO shipments: <code>shipment_type = RTO</code><br>
+        Revenue: <code>net_revenue</code><br>
+        Company name: <code>company_name</code>
+      </div>
+    </div>
+  </div>
+
+  <footer id="footer"></footer>
+</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+// FILE HANDLING
+// ═══════════════════════════════════════════════════════
+let zipFile = null, amFile = null;
+
+function setupDrop(zoneId, inputId, statusId, ext, onFile) {
+  const zone  = document.getElementById(zoneId);
+  const input = document.getElementById(inputId);
+  const status= document.getElementById(statusId);
+  const accept= ext === 'zip' ? '.zip' : '.csv';
+
+  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  });
+  input.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+  function handleFile(f) {
+    const ok = ext === 'zip' ? f.name.endsWith('.zip') : f.name.endsWith('.csv');
+    if (!ok) { status.textContent = '✗ Wrong file type'; status.className = 'drop-status err'; return; }
+    status.textContent = '✓ ' + f.name; status.className = 'drop-status';
+    onFile(f);
+    checkReady();
+  }
+}
+
+setupDrop('zone-zip','file-zip','status-zip','zip', f => { zipFile = f; });
+setupDrop('zone-am', 'file-am', 'status-am', 'csv', f => { amFile  = f; });
+
+function checkReady() {
+  const btn = document.getElementById('btn-go');
+  // ZIP is required; AM is optional
+  if (zipFile) { btn.classList.add('ready'); }
+}
+
+document.getElementById('btn-go').addEventListener('click', () => {
+  if (!zipFile) return;
+  document.getElementById('processing-msg').style.display = 'block';
+  document.getElementById('btn-go').disabled = true;
+  setTimeout(() => processFiles(), 50); // let UI update first
+});
+
+document.getElementById('btn-reload').addEventListener('click', () => {
+  zipFile = null; amFile = null;
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('upload-screen').style.display = 'flex';
+  document.getElementById('file-zip').value = '';
+  document.getElementById('file-am').value = '';
+  document.getElementById('status-zip').textContent = '';
+  document.getElementById('status-am').textContent = '';
+  document.getElementById('processing-msg').style.display = 'none';
+  document.getElementById('btn-go').disabled = false;
+  document.getElementById('btn-go').classList.remove('ready');
+});
+
+// ═══════════════════════════════════════════════════════
+// CORE PROCESSING
+// ═══════════════════════════════════════════════════════
+async function processFiles() {
+  try {
+    // 1. Parse AM mapping (optional)
+    let amMap = {}; // seller_email -> {am, cohort, zone, is_postpaid}
+    if (amFile) {
+      const amText = await readFileAsText(amFile);
+      const parsed = Papa.parse(amText, { header: true, skipEmptyLines: true });
+      parsed.data.forEach(row => {
+        const email = (row.seller_email || row['seller_email'] || '').toLowerCase().trim();
+        if (!email) return;
+        amMap[email] = {
+          am:          row.am_name || row.am || 'Unassigned',
+          cohort:      row.cohort  || '—',
+          zone:        row.zone    || '—',
+          is_postpaid: (row.is_postpaid || '').toLowerCase() === 'true' || (row.is_postpaid || '') === '1',
+        };
+      });
+    }
+
+    // 2. Read ZIP and parse all CSVs
+    const zip = await JSZip.loadAsync(zipFile);
+    const csvFiles = [];
+    zip.forEach((path, entry) => {
+      if (!entry.dir && path.match(/\.csv$/i) && !path.includes('__MACOSX')) {
+        csvFiles.push({ path, entry });
+      }
+    });
+
+    if (csvFiles.length === 0) {
+      alert('No CSV files found inside the ZIP.'); return;
+    }
+
+    // 3. Extract month/year from filename or data, sort chronologically
+    const months = await Promise.all(csvFiles.map(async ({ path, entry }) => {
+      const text = await entry.async('string');
+      const rows = Papa.parse(text, { header: true, skipEmptyLines: true }).data;
+      const monthYear = extractMonthYear(path, rows);
+      return { path, rows, ...monthYear };
+    }));
+
+    months.sort((a, b) => a.sortKey - b.sortKey);
+
+    // 4. Identify current period (closest to today)
+    const now = new Date();
+    const nowKey = now.getFullYear() * 100 + (now.getMonth() + 1);
+    let currentIdx = 0, bestDiff = Infinity;
+    months.forEach((m, i) => {
+      const diff = Math.abs(m.sortKey - nowKey);
+      if (diff < bestDiff) { bestDiff = diff; currentIdx = i; }
+    });
+
+    const currentMonth  = months[currentIdx];
+    const historyMonths = months.filter((_, i) => i !== currentIdx);
+    // Use up to 2 most recent historical months for baseline
+    const baselineMonths = historyMonths.slice(-2);
+
+    if (baselineMonths.length === 0) {
+      alert('Need at least 2 months of data (1 current + 1 historical) to compute baselines.'); return;
+    }
+
+    // 5. Aggregate per seller per month
+    function aggregateSellers(rows) {
+      const map = {};
+      rows.forEach(row => {
+        const email = (row.seller_email || '').toLowerCase().trim();
+        if (!email) return;
+        if (!map[email]) map[email] = { fwd: 0, rto: 0, rev: 0, company: row.company_name || '' };
+        const stype = (row.shipment_type || '').toUpperCase();
+        if (stype === 'FORWARD') { map[email].fwd++; map[email].rev += parseFloat(row.net_revenue) || 0; }
+        if (stype === 'RTO')     { map[email].rto++; }
+      });
+      return map;
+    }
+
+    const currentAgg = aggregateSellers(currentMonth.rows);
+    const baselineAggs = baselineMonths.map(m => aggregateSellers(m.rows));
+
+    // 6. Build seller set: only sellers with history in ≥1 baseline month
+    const historicalEmails = new Set();
+    baselineAggs.forEach(agg => Object.keys(agg).forEach(e => historicalEmails.add(e)));
+
+    // 7. Compute baseline avg fwd per seller
+    const baselineFwd = {};
+    historicalEmails.forEach(email => {
+      const vals = baselineAggs.map(agg => agg[email] ? agg[email].fwd : 0).filter((_, i) => baselineAggs[i][email]);
+      if (vals.length > 0) baselineFwd[email] = vals.reduce((a, b) => a + b, 0) / vals.length;
+    });
+
+    // 8. Score each seller
+    const sellers = [];
+    historicalEmails.forEach(email => {
+      const curr = currentAgg[email] || { fwd: 0, rto: 0, rev: 0, company: '' };
+      const baseline = baselineFwd[email] || 0;
+      const company  = curr.company || (baselineAggs.find(a => a[email]) || {})[email]?.company || '';
+      const am_info  = amMap[email] || { am: 'Unassigned', cohort: '—', zone: '—', is_postpaid: false };
+
+      const total    = curr.fwd + curr.rto;
+      const rto_rate = total > 0 ? curr.rto / total : 0;
+      const vs_base  = baseline > 0 ? curr.fwd / baseline : null;
+
+      // Scoring
+      let score = 0;
+      const reasons = [];
+
+      // Drop score (0–50)
+      if (vs_base !== null) {
+        if (vs_base <= 0.3)       { score += 50; reasons.push('Severe drop (>70% below own norm)'); }
+        else if (vs_base <= 0.5)  { score += 35; reasons.push('Major drop (>50% below own norm)'); }
+        else if (vs_base <= 0.7)  { score += 25; reasons.push('Notable drop (>30% below own norm)'); }
+        else if (vs_base <= 0.85) { score += 14; reasons.push('Mild slowdown vs own norm'); }
+      }
+
+      // RTO score (0–35)
+      if (rto_rate > 0.35)      { score += 35; reasons.push('High RTO rate (>35%)'); }
+      else if (rto_rate > 0.25) { score += 22; reasons.push('Elevated RTO rate (>25%)'); }
+
+      // Minimal activity (20)
+      if (curr.fwd <= 1 && baseline > 3) { score += 20; reasons.push('Minimal activity (≤1 shipment)'); }
+
+      // Tier
+      const tier = score >= 60 ? 'High' : score >= 25 ? 'Medium' : 'Low';
+      const reason_str = reasons.length ? reasons.join('; ') : 'Stable — at or above own norm';
+
+      sellers.push({
+        email, company,
+        am:       am_info.am,
+        cohort:   am_info.cohort,
+        zone:     am_info.zone,
+        is_postpaid: am_info.is_postpaid,
+        fwd_curr: curr.fwd,
+        rto_curr: curr.rto,
+        rev_curr: Math.round(curr.rev),
+        fwd_baseline: Math.round(baseline * 10) / 10,
+        vs_base,
+        rto_rate,
+        score,
+        tier,
+        reasons: reason_str,
+      });
+    });
+
+    // 9. Build AM rollup
+    const amRollup = {};
+    sellers.forEach(s => {
+      const am = s.am;
+      if (!amRollup[am]) amRollup[am] = { am, total: 0, high: 0, medium: 0, low: 0, rev_at_risk: 0, book_rev: 0 };
+      amRollup[am].total++;
+      amRollup[am].book_rev += s.rev_curr;
+      if (s.tier === 'High')   { amRollup[am].high++;   amRollup[am].rev_at_risk += s.rev_curr; }
+      if (s.tier === 'Medium') { amRollup[am].medium++;  amRollup[am].rev_at_risk += s.rev_curr; }
+      if (s.tier === 'Low')    amRollup[am].low++;
+    });
+    const ams = Object.values(amRollup).map(a => ({
+      ...a, at_risk_pct: Math.round((a.high + a.medium) / (a.total || 1) * 100)
+    }));
+
+    // 10. Summary
+    const high   = sellers.filter(s => s.tier === 'High').length;
+    const medium = sellers.filter(s => s.tier === 'Medium').length;
+    const low    = sellers.filter(s => s.tier === 'Low').length;
+    const rev_at_risk = sellers.filter(s => s.tier !== 'Low').reduce((a, s) => a + s.rev_curr, 0);
+
+    const DATA = {
+      sellers,
+      ams,
+      summary: {
+        current_period: currentMonth.label,
+        baseline_periods: baselineMonths.map(m => m.label).join(', '),
+        total_sellers: sellers.length,
+        high, medium, low,
+        rev_at_risk,
+        n_ams: ams.length,
+      }
+    };
+
+    initDashboard(DATA);
+  } catch(err) {
+    console.error(err);
+    alert('Error processing files: ' + err.message);
+    document.getElementById('processing-msg').style.display = 'none';
+    document.getElementById('btn-go').disabled = false;
+  }
+}
+
+function readFileAsText(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload  = e => res(e.target.result);
+    r.onerror = () => rej(new Error('File read failed'));
+    r.readAsText(file);
+  });
+}
+
+function extractMonthYear(path, rows) {
+  // Try filename pattern: YYYY-MM or YYYY_MM or Month_YYYY etc.
+  const filename = path.split('/').pop();
+  let m;
+
+  // Pattern: 2026-07 or 2026_07
+  m = filename.match(/(\d{4})[-_](\d{2})/);
+  if (m) {
+    const y = parseInt(m[1]), mo = parseInt(m[2]);
+    if (y > 2000 && mo >= 1 && mo <= 12)
+      return { sortKey: y * 100 + mo, label: monthName(mo) + ' ' + y };
+  }
+
+  // Fallback: read creation_date from first data row
+  if (rows.length > 0) {
+    const d = new Date(rows[0].creation_date);
+    if (!isNaN(d)) {
+      const y = d.getFullYear(), mo = d.getMonth() + 1;
+      return { sortKey: y * 100 + mo, label: monthName(mo) + ' ' + y };
+    }
+  }
+
+  // Last resort: use filename as label
+  return { sortKey: 0, label: filename.replace('.csv','') };
+}
+
+function monthName(n) {
+  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][n-1] || n;
+}
+
+// ═══════════════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════════════
+let DATA = null;
+let state = { search:'', tier:'all', am:'all', sortKey:'score', sortDir:-1 };
+let amState = { sortKey:'high', sortDir:-1 };
+const tierRank = { High:3, Medium:2, Low:1 };
+
+function initDashboard(data) {
+  DATA = data;
+  const s = data.summary;
+
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+
+  document.getElementById('asof').textContent =
+    'Current period: ' + s.current_period +
+    '  ·  Baseline: ' + s.baseline_periods +
+    '  ·  ' + s.total_sellers + ' scored sellers  ·  ' + s.n_ams + ' AMs';
+
+  document.getElementById('kpis').innerHTML = [
+    { label:'High risk',     val:s.high,   note:'call within 48h', cls:'high' },
+    { label:'Medium risk',   val:s.medium, note:'nudge this week',  cls:'med'  },
+    { label:'Low risk',      val:s.low,    note:'monitor',          cls:''     },
+    { label:'Rev at risk ₹', val:'₹'+(s.rev_at_risk/100000).toFixed(1)+'L', note:'H+M sellers', cls:'' },
+    { label:'AMs tracked',   val:s.n_ams,  note:'with seller books',cls:''     },
+    { label:'Total scored',  val:s.total_sellers, note:'with history',  cls:''  },
+  ].map(k => `<div class="kpi ${k.cls}"><div class="label">${k.label}</div><div class="val">${k.val}</div><div class="note">${k.note}</div></div>`).join('');
+
+  document.getElementById('dimnote').textContent =
+    'Scored against each seller\u2019s own ' + s.baseline_periods + ' average. Only sellers present in at least one historical month are included.';
+
+  document.getElementById('footer').textContent =
+    'Churn Watch Live · current: ' + s.current_period + ' · baseline: ' + s.baseline_periods +
+    ' · shipment_type=FORWARD/RTO · scored vs seller own norm · data never leaves your browser';
+
+  // AM dropdown
+  const amsel = document.getElementById('amsel');
+  amsel.innerHTML = '<option value="all">All Account Managers</option>';
+  [...new Set(data.sellers.map(d => d.am))].sort().forEach(a => {
+    const o = document.createElement('option'); o.value = a; o.textContent = a; amsel.appendChild(o);
+  });
+
+  // Reset UI state
+  state = { search:'', tier:'all', am:'all', sortKey:'score', sortDir:-1 };
+  document.getElementById('search').value = '';
+  document.querySelectorAll('#tierfilter button').forEach(b => b.className = b.dataset.tier === 'all' ? 'on' : '');
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelector('.tab[data-view=seller]').classList.add('active');
+  document.getElementById('view-seller').classList.add('active');
+
+  render();
+}
+
+function filtered() {
+  return DATA.sellers.filter(d => {
+    if (state.search) {
+      const q = state.search;
+      if (!d.email.toLowerCase().includes(q) && !(d.company||'').toLowerCase().includes(q)) return false;
+    }
+    if (state.tier !== 'all' && d.tier !== state.tier) return false;
+    if (state.am   !== 'all' && d.am   !== state.am)   return false;
+    return true;
+  }).sort((a, b) => {
+    const k = state.sortKey;
+    let va = k === 'tier' ? tierRank[a.tier] : a[k];
+    let vb = k === 'tier' ? tierRank[b.tier] : b[k];
+    if (typeof va === 'string') return state.sortDir * va.localeCompare(vb);
+    return state.sortDir * ((va ?? -1e12) - (vb ?? -1e12));
+  });
+}
+
+function scoreColor(t) {
+  return t === 'High' ? 'var(--high)' : t === 'Medium' ? 'var(--med)' : 'var(--low)';
+}
+
+function fmtPct(v) { return (v * 100).toFixed(0) + '%'; }
+
+function fmtVsBase(v) {
+  if (v === null || v === undefined) return '—';
+  const pct = Math.round((v - 1) * 100);
+  const arrow = v < 1 ? '▼ ' : '▲ ';
+  return arrow + Math.abs(pct) + '%';
+}
+function vsBaseColor(v) {
+  if (v === null || v === undefined) return 'var(--ink-soft)';
+  return v < 0.7 ? 'var(--high)' : v < 1 ? 'var(--med)' : 'var(--low)';
+}
+
+function render() {
+  const rows = filtered();
+  document.getElementById('countline').textContent =
+    rows.length + ' sellers shown' + (state.am !== 'all' ? ' · ' + state.am : '');
+  const tb = document.getElementById('tbody');
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="10"><div class="empty">No sellers match these filters.</div></td></tr>';
+    return;
+  }
+  tb.innerHTML = rows.slice(0, 500).map(d => `
+    <tr>
+      <td>
+        <div class="seller-name" title="${d.email}">${d.email}</div>
+        ${d.company ? '<div class="subtle">'+d.company+'</div>' : ''}
+      </td>
+      <td class="subtle">${d.am}${d.cohort && d.cohort!=='—' ? '<br><span style="font-size:10px">'+d.cohort+'</span>' : ''}</td>
+      <td><span class="tier-badge ${d.tier}">${d.tier}</span></td>
+      <td class="num">
+        <div class="score-cell">
+          <span>${d.score}</span>
+          <span class="score-bar"><i style="width:${d.score}%;background:${scoreColor(d.tier)}"></i></span>
+        </div>
+      </td>
+      <td class="num">${d.fwd_curr}</td>
+      <td class="num" style="color:var(--ink-soft)">${d.fwd_baseline}</td>
+      <td class="num" style="color:${vsBaseColor(d.vs_base)}">${fmtVsBase(d.vs_base)}</td>
+      <td class="num">${fmtPct(d.rto_rate)}</td>
+      <td class="num">${d.rev_curr.toLocaleString('en-IN')}</td>
+      <td><span class="reasons">${d.reasons}</span></td>
+    </tr>`).join('') +
+    (rows.length > 500 ? `<tr><td colspan="10"><div class="empty">Showing 500 of ${rows.length}. Narrow filters to see more.</div></td></tr>` : '');
+}
+
+// Controls
+document.getElementById('search').addEventListener('input', e => { state.search = e.target.value.toLowerCase().trim(); render(); });
+document.getElementById('amsel').addEventListener('change', e => { state.am = e.target.value; render(); });
+document.querySelectorAll('#tierfilter button').forEach(b => b.addEventListener('click', () => {
+  state.tier = b.dataset.tier;
+  document.querySelectorAll('#tierfilter button').forEach(x => x.className = '');
+  b.className = 'on' + (b.dataset.tier==='High' ? ' high' : b.dataset.tier==='Medium' ? ' med' : b.dataset.tier==='Low' ? ' low' : '');
+  render();
+}));
+document.querySelectorAll('#view-seller thead th[data-sort]').forEach(th => th.addEventListener('click', () => {
+  const k = th.dataset.sort;
+  if (state.sortKey === k) state.sortDir *= -1;
+  else { state.sortKey = k; state.sortDir = (k==='email'||k==='am'||k==='reasons') ? 1 : -1; }
+  render();
+}));
+
+// Tabs
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('view-' + t.dataset.view).classList.add('active');
+  if (t.dataset.view === 'am') renderAM();
+}));
+
+// AM view
+function renderAM() {
+  const rows = [...DATA.ams].sort((a, b) => {
+    const va = a[amState.sortKey], vb = b[amState.sortKey];
+    if (typeof va === 'string') return amState.sortDir * va.localeCompare(vb);
+    return amState.sortDir * (va - vb);
+  });
+  const tb = document.getElementById('ambody');
+  tb.innerHTML = rows.map(a => {
+    const tot = a.total || 1;
+    return `<tr style="cursor:pointer" data-am="${a.am}">
+      <td style="font-weight:560">${a.am}</td>
+      <td class="num">${a.total}</td>
+      <td class="num" style="color:var(--high);font-weight:600">${a.high}</td>
+      <td class="num" style="color:var(--med)">${a.medium}</td>
+      <td class="num" style="color:var(--low)">${a.low}</td>
+      <td><div class="ambar">
+        <i class="h" style="width:${a.high/tot*100}%"></i>
+        <i class="m" style="width:${a.medium/tot*100}%"></i>
+        <i class="l" style="width:${a.low/tot*100}%"></i>
+      </div></td>
+      <td class="num risk-pct" style="color:${a.at_risk_pct>=45?'var(--high)':a.at_risk_pct>=30?'var(--med)':'var(--ink)'}">${a.at_risk_pct}%</td>
+      <td class="num">${a.rev_at_risk.toLocaleString('en-IN')}</td>
+    </tr>`;
+  }).join('');
+  tb.querySelectorAll('tr').forEach(tr => tr.addEventListener('click', () => {
+    state.am = tr.dataset.am;
+    document.getElementById('amsel').value = tr.dataset.am;
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(x => x.classList.remove('active'));
+    document.querySelector('.tab[data-view=seller]').classList.add('active');
+    document.getElementById('view-seller').classList.add('active');
+    render();
+  }));
+}
+document.querySelectorAll('#view-am thead th[data-sortam]').forEach(th => th.addEventListener('click', () => {
+  const k = th.dataset.sortam;
+  if (amState.sortKey === k) amState.sortDir *= -1;
+  else { amState.sortKey = k; amState.sortDir = k==='am' ? 1 : -1; }
+  renderAM();
+}));
+</script>
+</body>
+</html>
